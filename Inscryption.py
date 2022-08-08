@@ -1,6 +1,11 @@
 import serial
 import tkinter as tk
 from PIL import ImageTk, Image
+import time
+import inspect
+
+Card1 = 0
+Card2 = 1
 
 cardHealth = []
 cardDamage = []
@@ -21,17 +26,15 @@ def my_command():
 click_btn= ImageTk.PhotoImage(Image.open("Rock.png"))
 
 #Let us create a label for button event
-#img_label= tk.Label(image=click_btn)
+img_label= tk.Label(image=click_btn)
 
 #Let us create a dummy button and pass the image
-button= tk.Button(win, image=click_btn,command= my_command,
-borderwidth=0)
+button= tk.Button(win, image=click_btn, command= my_command, borderwidth=0)
 button.pack(pady=30)
 
 text= tk.Label(win, text= "")
 text.pack(pady=30)
 
-win.mainloop()
 
 def connect():
     arduino = serial.Serial()
@@ -43,8 +46,12 @@ def connect():
 
 def main():
     arduino = connect()
+    #print(inspect.getsource(tk.mainloop()))
     while True:
         data = arduino.readline()
+        win.update_idletasks()
+        #win.update()
+        time.sleep(0.5)
         print(data)
     
     
