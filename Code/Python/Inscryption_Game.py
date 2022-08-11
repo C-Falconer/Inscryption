@@ -39,6 +39,7 @@ def listsToString():
     return ', '.join(map(str, newList))
 
 pygame.init()
+pygame.mixer.init()
 width, height = pyautogui.size()
 Card_Height = 233
 Card_Width = 155
@@ -55,6 +56,7 @@ for filename in os.listdir("Code\\Python\\Resources\\Images"):
     Card_names.append(name)
 print(Card_names)
 
+#Loading Images
 Card1 = pygame.image.load(base + Card_names[0] + ".png")
 Card2 = pygame.image.load(base + Card_names[1] + ".png")
 Card3 = pygame.image.load(base + Card_names[2] + ".png")
@@ -66,6 +68,13 @@ Card8 = pygame.image.load(base + Card_names[7] + ".png")
 Card9 = pygame.image.load(base + Card_names[8] + ".png")
 Card10 = pygame.image.load(base + Card_names[9] + ".png")
 Cards = [Card1, Card2, Card3, Card4, Card5, Card6, Card7, Card8, Card9, Card10]
+#Loading Sounds
+place_Card = pygame.mixer.Sound("Code\\Python\\Resources\\Audio\\CardClick.wav")
+select_Card = pygame.mixer.Sound("Code\\Python\\Resources\\Audio\\Select.ogg")
+botopia = pygame.mixer.music.load("Code\\Python\\Resources\\Audio\\Botopia.mp3")
+select_Card.set_volume(0.1)
+pygame.mixer.music.play(-1, 0.0)
+pygame.mixer.music.set_volume(0.7)
 
 onNum = False
 updating = False
@@ -91,6 +100,7 @@ while 1:
             if onNum:
                 onNum = False
                 Current_CardsNum.append(keyNum)
+                place_Card.play()
                 updating = False
             else:
                 onNum = True
@@ -99,3 +109,4 @@ while 1:
                     del Current_CardsNum[Current_CardsPos.index(keyNum)]
                     Current_CardsPos.remove(keyNum)
                 Current_CardsPos.append(keyNum)
+                select_Card.play()
