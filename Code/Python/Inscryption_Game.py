@@ -86,24 +86,15 @@ t = Thread(target = readArduino)
 t.daemon = True
 t.start()
 
+#Loading Images
+Cards = []
 Card_names = []
 base = "Code\\Python\\Resources\\Images\\"
 for filename in os.listdir("Code\\Python\\Resources\\Images"):
+    Cards.insert(len(Cards), pygame.image.load(base + filename))
     name = filename.replace(".png", "")
     Card_names.append(name)
 
-#Loading Images
-Card1 = pygame.image.load(base + Card_names[0] + ".png")
-Card2 = pygame.image.load(base + Card_names[1] + ".png")
-Card3 = pygame.image.load(base + Card_names[2] + ".png")
-Card4 = pygame.image.load(base + Card_names[3] + ".png")
-Card5 = pygame.image.load(base + Card_names[4] + ".png")
-Card6 = pygame.image.load(base + Card_names[5] + ".png")
-Card7 = pygame.image.load(base + Card_names[6] + ".png")
-Card8 = pygame.image.load(base + Card_names[7] + ".png")
-Card9 = pygame.image.load(base + Card_names[8] + ".png")
-Card10 = pygame.image.load(base + Card_names[9] + ".png")
-Cards = [Card1, Card2, Card3, Card4, Card5, Card6, Card7, Card8, Card9, Card10]
 #Loading Sounds
 place_Card = pygame.mixer.Sound("Code\\Python\\Resources\\Audio\\CardClick.wav")
 select_Card = pygame.mixer.Sound("Code\\Python\\Resources\\Audio\\Select.ogg")
@@ -114,7 +105,25 @@ pygame.mixer.music.set_volume(0.7)
 
 CardIds = {
     "b'30 B3 C5 24'": 0, #White
-    "b'30 94 0F 22'": 1 #Blue
+    "b'93 60 22 AA'": 1, #White
+    "b'D3 34 A0 A9'": 2, #White
+    "b'B3 80 67 A9'": 3, #White
+    "b'C3 B7 19 AA'": 4, #White
+    "b'F3 D1 A2 A9'": 5, #White
+    "b'83 C6 AD A9'": 6, #White
+    "b'23 0A E1 A9'": 7, #White
+    "b'93 39 0B AA'": 8, #White
+    "b'93 B4 04 AA'": 9, #White
+    "b'30 94 0F 22'": 10, #Blue
+    "b'3A 00 FB B0'": 11, #Blue
+    "b'BA CD FF B0'": 12, #Blue
+    "b'DA 52 15 B1'": 13, #Blue
+    "b'3A A0 13 B0'": 14, #Blue
+    "b'2A 20 FE B0'": 15, #Blue
+    "b'2A 6F 06 B0'": 16, #Blue
+    "b'8A 3F 05 B1'": 17, #Blue
+    "b'7A 62 03 B0'": 18, #Blue
+    "b'AA 39 16 B1'": 19 #Blue
 }
 
 onNum = False
@@ -122,13 +131,13 @@ updating = False
 while 1:
     #Clear screen
     screen.fill(0)
-    for h in range(len(Cards)):   
+    for h in range(10):   
         if h in Current_CardsPos and not updating:
-            screen.blit(Cards[Current_CardsNum[Current_CardsPos.index(h)]], ((width/2 - 2*Buffer_Width - Card_Width/2) + (h%5)*Buffer_Width, Buffer_Height + int(h > len(Cards)//2 - 1)*(height - Card_Height - 2*Buffer_Height)))
+            screen.blit(Cards[Current_CardsNum[Current_CardsPos.index(h)]], ((width/2 - 2*Buffer_Width - Card_Width/2) + (h%5)*Buffer_Width, Buffer_Height + int(h > 4)*(height - Card_Height - 2*Buffer_Height)))
         else:
-            pygame.draw.rect(screen, (255, 255, 255), pygame.Rect((width/2 - 2*Buffer_Width - Card_Width/2) + (h%5)*Buffer_Width, Buffer_Height + int(h > len(Cards)//2 - 1)*(height - Card_Height - 2*Buffer_Height), Card_Width, Card_Height), 3)
+            pygame.draw.rect(screen, (255, 255, 255), pygame.Rect((width/2 - 2*Buffer_Width - Card_Width/2) + (h%5)*Buffer_Width, Buffer_Height + int(h > 4)*(height - Card_Height - 2*Buffer_Height), Card_Width, Card_Height), 3)
     if len(Current_CardsNum) != len(Current_CardsPos):    
-        pygame.draw.rect(screen, (0, 255, 0), pygame.Rect((width/2 - 2*Buffer_Width - Card_Width/2 - Card_Width/10) + (Current_CardsPos[-1]%5)*Buffer_Width, Buffer_Height - Card_Height/14 + int(Current_CardsPos[-1] > len(Cards)//2 - 1)*(height - Card_Height - 2*Buffer_Height), Card_Width*6/5, Card_Height*8/7), 10)
+        pygame.draw.rect(screen, (0, 255, 0), pygame.Rect((width/2 - 2*Buffer_Width - Card_Width/2 - Card_Width/10) + (Current_CardsPos[-1]%5)*Buffer_Width, Buffer_Height - Card_Height/14 + int(Current_CardsPos[-1] > 4)*(height - Card_Height - 2*Buffer_Height), Card_Width*6/5, Card_Height*8/7), 10)
     listString = listsToString()
     pygame.display.set_caption(listString)
     pygame.display.flip()
