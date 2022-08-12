@@ -2,6 +2,8 @@ import pygame
 import pyautogui
 import os
 import sys
+import serial
+from threading import Thread
 
 def returnKeyNum(key):
     if key == pygame.K_0:
@@ -24,6 +26,8 @@ def returnKeyNum(key):
         return 8
     elif key == pygame.K_9:
         return 9
+    else:
+        return 7
 
 def listsToString():
     newList = []
@@ -38,8 +42,37 @@ def listsToString():
             Numi += 1
     return ', '.join(map(str, newList))
 
+def connect():
+    arduino = serial.Serial()
+    arduino.port = 'COM15'
+    arduino.baudrate = 9600
+    arduino.open()
+    return arduino
+
+def readArduino():
+    while 1:
+        data = arduino.readline()
+        cardID = str(data[2:len(data)-2])
+        pos = str(data[0])
+        print(data)
+        print(pos, cardID)
+        updating = True
+        try:   
+            cardID = CardIds[cardID]
+            pos = int(pos) - 48 #Man idk. Probably hex shenanigans
+            if pos in Current_CardsPos:
+                del Current_CardsNum[Current_CardsPos.index(pos)]
+                Current_CardsPos.remove(pos)
+            Current_CardsPos.append(pos)
+            Current_CardsNum.append(cardID)
+            place_Card.play()
+        except:
+            print("Read failed.")
+        updating = False
+
 pygame.init()
 pygame.mixer.init()
+arduino = connect()
 width, height = pyautogui.size()
 Card_Height = 233
 Card_Width = 155
@@ -49,12 +82,15 @@ Buffer_Height = Card_Height*2/5
 Current_CardsPos = []
 Current_CardsNum = []
 
+t = Thread(target = readArduino)
+t.daemon = True
+t.start()
+
 Card_names = []
 base = "Code\\Python\\Resources\\Images\\"
 for filename in os.listdir("Code\\Python\\Resources\\Images"):
     name = filename.replace(".png", "")
     Card_names.append(name)
-print(Card_names)
 
 #Loading Images
 Card1 = pygame.image.load(base + Card_names[0] + ".png")
@@ -74,7 +110,12 @@ select_Card = pygame.mixer.Sound("Code\\Python\\Resources\\Audio\\Select.ogg")
 botopia = pygame.mixer.music.load("Code\\Python\\Resources\\Audio\\Botopia.mp3")
 select_Card.set_volume(0.1)
 pygame.mixer.music.play(-1, 0.0)
-pygame.mixer.music.set_volume(0.7)
+pygame.mixer.music.set_volume(0.0)
+
+CardIds = {
+    "b'30 B3 C5 24'": 0, #White
+    "b'30 94 0F 22'": 1 #Blue
+}
 
 onNum = False
 updating = False

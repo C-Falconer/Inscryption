@@ -31,6 +31,9 @@ MFRC522 mfrc522s[3] = {mfrc522, mfrc522_9, mfrc522_10};
 
 ShiftIn<2> shift;
 
+byte IRValues[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+byte oldID[4];
+
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(9600);
@@ -46,42 +49,39 @@ void setup() {
   pinMode(s2, OUTPUT);
   pinMode(_PL, OUTPUT);
   pinMode(_CE, OUTPUT);
-  mfrc522.PCD_DumpVersionToSerial();
-  mfrc522.PICC_DumpToSerial(&(mfrc522.uid));
+  //mfrc522.PCD_DumpVersionToSerial();
+  //mfrc522.PICC_DumpToSerial(&(mfrc522.uid));
   lineSelectMux(0);
-  tester();
+  //tester();
   shift.begin(_PL, _CE, _Q7, CP);
 }
 
-byte incoming;
-byte incoming2;
-byte preIncoming;
-String input;
 int current_MFRC = 0;
+int muxSelected = 0;
 void loop() {
-  // put your main code here, to run repeatedly:
-//  pulsePL();
-//  incoming = getData165();
-//  //incoming2 = shiftIn(_Q7, CP, LSBFIRST);
-//  if(incoming != preIncoming) {
-//    Serial.println(incoming, BIN);
-//    //Serial.println(incoming2, BIN);
-//  }
-//  preIncoming = incoming;
   if(shift.update()) {
     displayValues();
   }
   if(mfrc522s[current_MFRC].PICC_IsNewCardPresent() && mfrc522s[current_MFRC].PICC_ReadCardSerial()) {
-    dump_byte_array(mfrc522s[current_MFRC].uid.uidByte, mfrc522s[current_MFRC].uid.size);
-    Serial.println();
+    if(!isSameID()) {
+      Serial.print(muxSelected);
+      dump_byte_array(mfrc522s[current_MFRC].uid.uidByte, mfrc522s[current_MFRC].uid.size);
+      Serial.println();
+    }
   }
   delay(200);
-//  while (Serial.available() == 0) {if(mfrc522s[current_MFRC].PICC_IsNewCardPresent() && mfrc522s[current_MFRC].PICC_ReadCardSerial()) {
-//    dump_byte_array(mfrc522s[current_MFRC].uid.uidByte, mfrc522s[current_MFRC].uid.size);
-//    Serial.println();
-//  }}
-//  input = Serial.readString();
-//  lineSelectMux(input.toInt());
+}
+
+//RFID
+bool isSameID() {
+  bool sameOld = true;
+  for (int i = 0; i < mfrc522s[current_MFRC].uid.size; i++) {
+    if (mfrc522s[current_MFRC].uid.uidByte[i] != oldID[i]) {
+      sameOld = false;
+    }
+    oldID[i] = mfrc522.uid.uidByte[i];
+  }
+  return sameOld;
 }
 
 //Shift Register
@@ -102,8 +102,28 @@ byte getData165() {
 
 void displayValues() {
   for(int i = 0; i < shift.getDataWidth(); i++)
-    Serial.print( shift.state(i) ); // get state of button i
-  Serial.println();
+    //Serial.print(shift.state(i)); // get state of button i
+    if(i < 2) {
+      if(IRValues[i + 8] != shift.state(i)) {
+//        Serial.print(i + 8);
+//        Serial.print(" ");
+//        Serial.println(shift.state(i));
+        if(shift.state(i) == 1) {
+          lineSelectMux(i + 8);
+        }
+      }
+      IRValues[i + 8] = shift.state(i);
+    } else if(i > 7) {
+      if(IRValues[i - 8] != shift.state(i)) {
+//        Serial.print(i - 8);
+//        Serial.print(" ");
+//        Serial.println(shift.state(i));
+        if(shift.state(i) == 1) {
+          lineSelectMux(i - 8);
+        }
+      }
+      IRValues[i - 8] = shift.state(i);
+    }
 }
 
 //Multiplexer
@@ -111,21 +131,18 @@ void lineSelectMux(int num) {
   if(num > 9 || num < 0) {
     return;
   }
-  Serial.println(num);
+  muxSelected = num;
   if(num == 8) {
     mfrc522_9.PCD_Init();
     current_MFRC = 1;
-    //Serial.print("8");
     return;
   } else if(num == 9) {
     mfrc522_10.PCD_Init();
     current_MFRC = 2;
-    //Serial.print("9");
     return;
   }
   for(int i = 0; i < 3; i++) {
     digitalWrite(selectionLines[i], num % 2);
-    //Serial.print(num % 2);
     num /= 2;
   }
   current_MFRC = 0;
