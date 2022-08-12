@@ -110,7 +110,7 @@ select_Card = pygame.mixer.Sound("Code\\Python\\Resources\\Audio\\Select.ogg")
 botopia = pygame.mixer.music.load("Code\\Python\\Resources\\Audio\\Botopia.mp3")
 select_Card.set_volume(0.1)
 pygame.mixer.music.play(-1, 0.0)
-pygame.mixer.music.set_volume(0.0)
+pygame.mixer.music.set_volume(0.7)
 
 CardIds = {
     "b'30 B3 C5 24'": 0, #White
