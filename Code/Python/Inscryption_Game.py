@@ -5,6 +5,35 @@ import sys
 import serial
 from threading import Thread
 
+#Main game variables.
+Current_CardsPos = []
+Current_CardsNum = []
+Cards = ["", "", "", "", "", "", "", "", "", ""]
+onPlayer2 = False
+PlayersHealth = [0, 0]
+PlayersBattery = [1, 1]
+turn = 0
+
+#Classes
+class Card:
+    def __init__(self, Pos, Name, Power, Health, Cost, *Sigils):
+        self.Pos = Pos
+        self.Name = Name
+        self.Power = Power
+        self.Health = Health
+        self.Cost = Cost
+        self.Sigils = Sigils
+    def Attack(self):
+        if isinstance(Cards[(self.Pos + 5)%10], Card):
+            Cards[(self.Pos + 5)%10].Damage(self.Power)
+        else:
+            PlayersHealth[int(self.Pos < 5)] -= self.Power
+    def Damage(self, DamageDone):
+        self.Health -= DamageDone
+        if self.Health <= 0:
+            KillCard(self.Pos)  
+
+#Functions
 def returnKeyNum(key):
     if key == pygame.K_0:
         return 0
@@ -26,6 +55,8 @@ def returnKeyNum(key):
         return 8
     elif key == pygame.K_9:
         return 9
+    elif key == pygame.K_a:
+        attackPhase()
     else:
         return 7
 
@@ -54,22 +85,75 @@ def readArduino():
         data = arduino.readline()
         cardID = str(data[2:len(data)-2])
         pos = str(data[0])
+        pos = int(pos) - 48 #Man idk. Probably hex shenanigans
         print(data)
         print(pos, cardID)
-        updating = True
+        if updating:
+            continue
         try:   
             cardID = CardIds[cardID]
-            pos = int(pos) - 48 #Man idk. Probably hex shenanigans
-            if pos in Current_CardsPos:
-                del Current_CardsNum[Current_CardsPos.index(pos)]
-                Current_CardsPos.remove(pos)
-            Current_CardsPos.append(pos)
-            Current_CardsNum.append(cardID)
-            place_Card.play()
+            updateCards(pos, cardID)
         except:
             print("Read failed.")
-        updating = False
 
+def updateCards(pos, num):
+    updating = True
+    statsGot = CardStats[num].split(",", 5)
+    statsGot[-1] = statsGot[-1].strip()
+    print(statsGot)
+    if PlayersBattery[int(pos > 4)] - int(statsGot[4]) < 0:
+        print("Not enought battery to play this card.")
+        return
+    else:
+        PlayersBattery[int(pos > 4)] -= int(statsGot[4])
+    if len(statsGot) < 6:
+        name = statsGot[1]
+        statsGot = list(map(int, statsGot[2:5]))
+        statsGot.insert(0, name)
+        statsGot.insert(0, pos)
+        NewCard = Card(pos, statsGot[1], statsGot[2], statsGot[3], statsGot[4])
+    else:
+        sigilsGot = statsGot[5]
+        name = statsGot[1]
+        statsGot = list(map(int, statsGot[2:5]))
+        statsGot.insert(0, name)
+        statsGot.insert(0, pos)
+        if sigilsGot.find(",") != -1:
+            sigilsGot = sigilsGot[1:len(sigilsGot) - 1].split(",")
+        print(sigilsGot)
+        sigilsGot = list(map(int, sigilsGot))
+        NewCard = Card(pos, statsGot[1], statsGot[2], statsGot[3], statsGot[4], sigilsGot)
+    Cards[pos] = NewCard
+    if pos in Current_CardsPos:
+        del Current_CardsNum[Current_CardsPos.index(pos)]
+        Current_CardsPos.remove(pos)
+    Current_CardsPos.append(pos)
+    Current_CardsNum.append(num)
+    place_Card.play()
+    updating = False
+
+def attackPhase():
+    global onPlayer2
+    global turn
+    for i in range(5):
+        if isinstance(Cards[i + int(onPlayer2)*5], Card):
+            Cards[i + int(onPlayer2)*5].Attack()
+    if(onPlayer2):
+        turn += 1
+        for i in range(len(PlayersBattery)):
+            if(turn + 1 > 6):
+                PlayersBattery[i] = 6
+            else:
+                PlayersBattery[i] = turn + 1
+    onPlayer2 = not onPlayer2
+
+def KillCard(pos):
+    del Cards[pos]     
+    Cards.insert(pos, "") 
+    del Current_CardsNum[Current_CardsPos.index(pos)]
+    Current_CardsPos.remove(pos)
+
+#Setting up game
 pygame.init()
 pygame.mixer.init()
 arduino = connect()
@@ -77,32 +161,36 @@ width, height = pyautogui.size()
 Card_Height = 233
 Card_Width = 155
 screen = pygame.display.set_mode((width, height))
+font = pygame.font.Font(pygame.font.get_default_font(), 32)
+text = font.render("0  0 0", True, (255, 255, 255), (0, 0, 0))
+text2 = font.render("0 0", True, (255, 255, 255), (0, 0, 0))
+textLabel = text.get_rect()
+textLabel2 = text2.get_rect()
+textLabel.topleft = (0, 0)
+textLabel2.topright = (width-31, 0)
 Buffer_Width = Card_Width*3/2
 Buffer_Height = Card_Height*2/5
-Current_CardsPos = []
-Current_CardsNum = []
 
+#Beginning Thread
 t = Thread(target = readArduino)
 t.daemon = True
 t.start()
 
 #Loading Images
-Cards = []
-Card_names = []
+CardImages = []
 base = "Code\\Python\\Resources\\Images\\"
 for filename in os.listdir("Code\\Python\\Resources\\Images"):
-    Cards.insert(len(Cards), pygame.image.load(base + filename))
-    name = filename.replace(".png", "")
-    Card_names.append(name)
+    CardImages.insert(len(CardImages), pygame.image.load(base + filename))
 
-#Loading Sounds
+#Loading Sounds and Setting Volumes
 place_Card = pygame.mixer.Sound("Code\\Python\\Resources\\Audio\\CardClick.wav")
 select_Card = pygame.mixer.Sound("Code\\Python\\Resources\\Audio\\Select.ogg")
 botopia = pygame.mixer.music.load("Code\\Python\\Resources\\Audio\\Botopia.mp3")
 select_Card.set_volume(0.1)
-pygame.mixer.music.play(-1, 0.0)
+pygame.mixer.music.play(-1, 0.0) #Set as background music to loop infinitely
 pygame.mixer.music.set_volume(0.7)
 
+#Dictionary of RFID Tags and their associated ID.
 CardIds = {
     "b'30 B3 C5 24'": 0, #White
     "b'93 60 22 AA'": 1, #White
@@ -126,6 +214,11 @@ CardIds = {
     "b'AA 39 16 B1'": 19 #Blue
 }
 
+#Reading Stats
+Stats = open("Code\\Python\\Resources\\CardStats.csv")
+CardStats = Stats.readlines()[1:]
+
+#Main Loop
 onNum = False
 updating = False
 while 1:
@@ -133,13 +226,19 @@ while 1:
     screen.fill(0)
     for h in range(10):   
         if h in Current_CardsPos and not updating:
-            screen.blit(Cards[Current_CardsNum[Current_CardsPos.index(h)]], ((width/2 - 2*Buffer_Width - Card_Width/2) + (h%5)*Buffer_Width, Buffer_Height + int(h > 4)*(height - Card_Height - 2*Buffer_Height)))
+            screen.blit(CardImages[Current_CardsNum[Current_CardsPos.index(h)]], ((width/2 - 2*Buffer_Width - Card_Width/2) + (h%5)*Buffer_Width, Buffer_Height + int(h > 4)*(height - Card_Height - 2*Buffer_Height)))
         else:
             pygame.draw.rect(screen, (255, 255, 255), pygame.Rect((width/2 - 2*Buffer_Width - Card_Width/2) + (h%5)*Buffer_Width, Buffer_Height + int(h > 4)*(height - Card_Height - 2*Buffer_Height), Card_Width, Card_Height), 3)
     if len(Current_CardsNum) != len(Current_CardsPos):    
         pygame.draw.rect(screen, (0, 255, 0), pygame.Rect((width/2 - 2*Buffer_Width - Card_Width/2 - Card_Width/10) + (Current_CardsPos[-1]%5)*Buffer_Width, Buffer_Height - Card_Height/14 + int(Current_CardsPos[-1] > 4)*(height - Card_Height - 2*Buffer_Height), Card_Width*6/5, Card_Height*8/7), 10)
     listString = listsToString()
     pygame.display.set_caption(listString)
+    text2String = str(PlayersHealth[1]) + " " + str(PlayersBattery[1])
+    textLabel2.topright = (width - 1 - 15*(len(text2String)-3), 0)
+    text = font.render(str(turn) + "  " + str(PlayersHealth[0]) + " " + str(PlayersBattery[0]), True, (255, 255, 255), (0, 0, 0))    
+    text2 = font.render(text2String, True, (255, 255, 255), (0, 0, 0))
+    screen.blit(text, textLabel)
+    screen.blit(text2, textLabel2)
     pygame.display.flip()
     for event in pygame.event.get():
         if event.type==pygame.QUIT:
@@ -147,10 +246,13 @@ while 1:
             sys.exit(0) 
         if event.type == pygame.KEYDOWN:
             keyNum = returnKeyNum(event.key)
+            if keyNum == None:
+                continue
             if onNum:
                 onNum = False
-                Current_CardsNum.append(keyNum)
-                place_Card.play()
+                position = Current_CardsPos[-1]
+                del Current_CardsPos[-1]
+                updateCards(position, keyNum)
                 updating = False
             else:
                 onNum = True
