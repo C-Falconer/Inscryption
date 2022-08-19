@@ -4,6 +4,7 @@ import os
 import sys
 import serial
 from threading import Thread
+from PIL import Image
 
 #Main game variables.
 Current_CardsPos = []
@@ -97,7 +98,9 @@ def readArduino():
             print("Read failed.")
 
 def updateCards(pos, num):
-    updating = True
+    if onPlayer2 != (pos > 4):
+        print("It is Player {0}'s turn.".format(int(onPlayer2) + 1))
+        return
     statsGot = CardStats[num].split(",", 5)
     statsGot[-1] = statsGot[-1].strip()
     print(statsGot)
@@ -106,6 +109,7 @@ def updateCards(pos, num):
         return
     else:
         PlayersBattery[int(pos > 4)] -= int(statsGot[4])
+    updating = True
     if len(statsGot) < 6:
         name = statsGot[1]
         statsGot = list(map(int, statsGot[2:5]))
@@ -120,7 +124,6 @@ def updateCards(pos, num):
         statsGot.insert(0, pos)
         if sigilsGot.find(",") != -1:
             sigilsGot = sigilsGot[1:len(sigilsGot) - 1].split(",")
-        print(sigilsGot)
         sigilsGot = list(map(int, sigilsGot))
         NewCard = Card(pos, statsGot[1], statsGot[2], statsGot[3], statsGot[4], sigilsGot)
     Cards[pos] = NewCard
@@ -138,13 +141,12 @@ def attackPhase():
     for i in range(5):
         if isinstance(Cards[i + int(onPlayer2)*5], Card):
             Cards[i + int(onPlayer2)*5].Attack()
-    if(onPlayer2):
-        turn += 1
-        for i in range(len(PlayersBattery)):
-            if(turn + 1 > 6):
-                PlayersBattery[i] = 6
-            else:
-                PlayersBattery[i] = turn + 1
+    turn += 1
+    for i in range(len(PlayersBattery)):
+        if(turn + 1 > 6):
+            PlayersBattery[i] = 6
+        else:
+            PlayersBattery[i] = turn + 1
     onPlayer2 = not onPlayer2
 
 def KillCard(pos):
@@ -179,8 +181,13 @@ t.start()
 #Loading Images
 CardImages = []
 base = "Code\\Python\\Resources\\Images\\"
-for filename in os.listdir("Code\\Python\\Resources\\Images"):
-    CardImages.insert(len(CardImages), pygame.image.load(base + filename))
+for filename in os.listdir(base + "Cards"):
+    CardImages.insert(len(CardImages), pygame.image.load(base + "Cards\\" + filename))
+Background = pygame.image.load(base + "Background3.jpg")
+Background = pygame.transform.scale(Background, (width, height))
+CardSlot = pygame.image.load(base + "CardSlot.png")
+CardSlot = pygame.transform.scale(CardSlot, (Card_Width, Card_Height))
+
 
 #Loading Sounds and Setting Volumes
 place_Card = pygame.mixer.Sound("Code\\Python\\Resources\\Audio\\CardClick.wav")
@@ -224,13 +231,23 @@ updating = False
 while 1:
     #Clear screen
     screen.fill(0)
-    for h in range(10):   
+    screen.blit(Background, (0, 0))
+    for h in range(10): 
         if h in Current_CardsPos and not updating:
-            screen.blit(CardImages[Current_CardsNum[Current_CardsPos.index(h)]], ((width/2 - 2*Buffer_Width - Card_Width/2) + (h%5)*Buffer_Width, Buffer_Height + int(h > 4)*(height - Card_Height - 2*Buffer_Height)))
+            if h > 4:
+                CurrentCard = CardImages[Current_CardsNum[Current_CardsPos.index(h)]]
+            else:
+                CurrentCard = pygame.transform.rotate(CardImages[Current_CardsNum[Current_CardsPos.index(h)]], 180)
+            screen.blit(CurrentCard, ((width/2 - 2*Buffer_Width - Card_Width/2) + (h%5)*Buffer_Width, Buffer_Height + int(h > 4)*(height - Card_Height - 2*Buffer_Height)))
         else:
-            pygame.draw.rect(screen, (255, 255, 255), pygame.Rect((width/2 - 2*Buffer_Width - Card_Width/2) + (h%5)*Buffer_Width, Buffer_Height + int(h > 4)*(height - Card_Height - 2*Buffer_Height), Card_Width, Card_Height), 3)
+            if h > 4:
+                CardSlotMod = CardSlot
+            else:
+                CardSlotMod = pygame.transform.rotate(CardSlot, 180)
+            screen.blit(CardSlotMod, ((width/2 - 2*Buffer_Width - Card_Width/2) + (h%5)*Buffer_Width, Buffer_Height + int(h > 4)*(height - Card_Height - 2*Buffer_Height)))
+            pygame.draw.rect(screen, (5,152,206), pygame.Rect((width/2 - 2*Buffer_Width - Card_Width/2) + (h%5)*Buffer_Width, Buffer_Height + int(h > 4)*(height - Card_Height - 2*Buffer_Height), Card_Width+10, Card_Height), 10) 
     if len(Current_CardsNum) != len(Current_CardsPos):    
-        pygame.draw.rect(screen, (0, 255, 0), pygame.Rect((width/2 - 2*Buffer_Width - Card_Width/2 - Card_Width/10) + (Current_CardsPos[-1]%5)*Buffer_Width, Buffer_Height - Card_Height/14 + int(Current_CardsPos[-1] > 4)*(height - Card_Height - 2*Buffer_Height), Card_Width*6/5, Card_Height*8/7), 10)
+        pygame.draw.rect(screen, (0, 255, 0), pygame.Rect((width/2 - 2*Buffer_Width - Card_Width/2 - Card_Width/10) + (Current_CardsPos[-1]%5)*Buffer_Width, Buffer_Height - Card_Height/14 + int(Current_CardsPos[-1] > 4)*(height - Card_Height - 2*Buffer_Height), 10 + Card_Width*6/5, Card_Height*8/7), 10)
     listString = listsToString()
     pygame.display.set_caption(listString)
     text2String = str(PlayersHealth[1]) + " " + str(PlayersBattery[1])
@@ -255,6 +272,9 @@ while 1:
                 updateCards(position, keyNum)
                 updating = False
             else:
+                if onPlayer2 != (keyNum > 4):
+                    print("It is Player {0}'s turn.".format(int(onPlayer2) + 1))
+                    continue
                 onNum = True
                 updating = True
                 if keyNum in Current_CardsPos:
