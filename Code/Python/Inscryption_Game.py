@@ -1,9 +1,8 @@
-from operator import index
 import pygame
-import pyautogui
-import os
+from pyautogui import size
+from os import listdir
 from sys import exit
-import serial
+from serial import Serial
 from threading import Thread
 from PIL import Image
 from random import uniform
@@ -17,7 +16,9 @@ onPlayer2 = False
 PlayersHealth = [0, 0]
 PlayersBattery = [1, 1]
 PlayersBones = [0, 0]
+Circuits = ([], [-1, -1, -1, -1])
 turn = 0
+selectedCard = [-1, -1]
 #Green, Orange, Blue
 PlayersGems = ([False, False, False], [False, False, False])
 
@@ -39,29 +40,95 @@ class Card:
         self.Nano = False
         self.Swapper = False
         self.Right = onPlayer2
-        for sigil in Sigils:
-            if sigil == 5:
-                self.Air = True
-            elif sigil == 3:
+        self.VesselPrinter = False
+        self.Annoyed = False
+        self.Conduit = False
+        self.Guardian = False #
+        self.AttackUp = False
+        self.Buffed = False
+        self.Powered = False
+        self.BuffWhenPowered = False
+        self.TriWhenPowered = False
+        self.Tri = False
+        self.Bi = False
+        self.Sentry = False
+        self.Clinger = False
+        self.Sniper = False
+        self.checkSigils()
+    def checkSigils(self):
+        for sigil in self.Sigils:
+            if sigil == 3:
                 self.Airblock = True
+            elif sigil == 5:
+                self.Air = True
+            elif sigil == 12 or sigil == 19 or sigil == 26:
+                self.Conduit = True
+            elif sigil == 13:
+                self.VesselPrinter = True
+            elif sigil == 20:
+                self.Sentry = True
             elif sigil == 21:
                 self.Quills = True
+            elif sigil == 22:
+                self.Sniper = True    
+            elif sigil == 25:
+                self.Clinger = True
             elif sigil == 29:
                 self.Nano = True
+            elif sigil == 31:
+                self.TriWhenPowered = True
             elif sigil == 32:
                 self.Swapper = True
-    def Attack(self):
-        if isinstance(Cards[(self.Pos + 5) % 10], Card):
-            if not self.Air or Cards[(self.Pos + 5) % 10].Airblock:
-                Cards[(self.Pos + 5) % 10].Damage(self.Power)
+            elif sigil == 33:
+                self.BuffWhenPowered = True
+            elif sigil == 34:
+                self.Tri = True
+    def checkPoweredSigils(self):
+        if self.BuffWhenPowered:
+            if inCircuit(self.Pos):
+                self.Buffed = True
             else:
-                PlayersHealth[int(self.Pos < 5)] -= self.Power
+                self.Buffed = False
+        elif self.TriWhenPowered:
+            if inCircuit(self.Pos):
+                self.Tri = True
+            else:
+                self.Tri = False
+    def getDamage(self):
+        self.checkPoweredSigils()
+        return self.Power + int(self.Annoyed) + int(self.AttackUp) + 2*int(self.Buffed)
+    def Attack(self, snipe = -1):
+        if snipe != -1:
+            self.Strike(snipe)
+            return
+        damagePositions = [0]
+        if self.Tri or self.Bi:
+            if self.Tri:
+                damagePositions = [-1, 0, 1]
+            elif self.Bi:
+                damagePositions = [-1, 1]
+            if -1 in damagePositions and (self.Pos - 1) % 5 == 4:
+                damagePositions.remove(-1)
+            elif 1 in damagePositions and (self.Pos + 1) % 5 == 0:
+                damagePositions.remove(1)
+        for position in damagePositions:
+            enemyPos = (self.Pos + 5 + position) % 10
+            self.Strike(enemyPos)
+    def Strike(self, pos):
+        damage = self.getDamage()
+        if isinstance(Cards[pos], Card):
+            if not self.Air or Cards[pos].Airblock:
+                Cards[pos].Damage(damage)
+            else:
+                PlayersHealth[int(self.Pos < 5)] -= damage
         else:
-            PlayersHealth[int(self.Pos < 5)] -= self.Power
+            PlayersHealth[int(self.Pos < 5)] -= damage
     def Damage(self, DamageDone):
         if self.Nano:
             self.Nano = False
             return
+        if self.VesselPrinter:
+            displayMessage(f"Player {int(self.Pos > 4) + 1} draw a vessel.")
         if self.Swapper:
             oldPow = self.Power
             self.Power = self.Health
@@ -76,13 +143,18 @@ class Card:
             Current_CardsPos[Current_CardsPos.index(self.Pos)] = self.Pos + direction
             Cards[self.Pos + direction] = self
             Cards[self.Pos] = ""
-            print("Going", direction, "Start", self.Pos, "Dest", self.Pos + direction)
             self.Pos = self.Pos + direction
             self.Right = direction > 0
+            self.Annoyed = False
+            if isinstance(Cards[(self.Pos + 5) % 10], Card):
+                if Cards[(self.Pos + 5) % 10].Sentry:
+                    self.Damage(1)
     def AddSigil(self, Sigil):
-        Sigil = list(Sigil)
+        if not isinstance(Sigil, list):
+            Sigil = [Sigil]
         for sig in Sigil:
             self.Sigils.append(sig)
+        self.checkSigils()
 
 #Functions
 def returnKeyNum(key):
@@ -107,14 +179,13 @@ def returnKeyNum(key):
     elif key == pygame.K_9:
         return 9
     elif key == pygame.K_a:
-        attackPhase()
+        if not selecting:
+            attackPhase()
     elif key == pygame.K_RETURN:
         return -1
     elif key == pygame.K_l:
         pygame.quit() 
         exit(0)
-    else:
-        return
 
 def listsToString():
     newList = []
@@ -130,7 +201,7 @@ def listsToString():
     return ', '.join(map(str, newList))
 
 def connect():
-    arduino = serial.Serial()
+    arduino = Serial()
     arduino.port = 'COM15'
     arduino.baudrate = 9600
     arduino.open()
@@ -165,7 +236,7 @@ def updateCards(pos, num, overrideBattery = False):
     if statsGot.count('') > 0:
         for i in range(statsGot.count('')):
             statsGot.remove('')
-    print(statsGot)
+    print(statsGot, filenames[num])
     if PlayersBattery[int(pos > 4)] - int(statsGot[4]) < 0 and not overrideBattery:
         print("Not enought battery to play this card.")
         return
@@ -194,9 +265,7 @@ def updateCards(pos, num, overrideBattery = False):
         NewCard = Card(pos, name, statsGot[2], statsGot[3], statsGot[4], sigilsGot)
         Cards[pos] = NewCard
         for sigil in sigilsGot:
-            if sigil == 16:
-                displayMessage(f"Player {int(onPlayer2) + 1} was gifted a card")
-            elif sigil == 2:
+            if sigil == 2:
                 #Amorphous
                 rand = floor(uniform(0, 33))
                 while rand == 1 or rand == 4:
@@ -208,14 +277,46 @@ def updateCards(pos, num, overrideBattery = False):
         Current_CardsPos.remove(pos)
     Current_CardsPos.append(pos)
     Current_CardsNum.append(num)
+    cardPlaced(pos)
+    checkCircuits()
+    placeStats()
     place_Card.play()
     updating = False
+
+def cardPlaced(pos):
+    enemyPos = (pos + 5) % 10
+    #Sentry
+    if isinstance(Cards[enemyPos], Card):
+        if Cards[enemyPos].Sentry:
+            Cards[pos].Damage(1)
+    #Guardian
+    for enemy in range(int(enemyPos > 4)*5, int(enemyPos > 4)*5 + 5):
+        if isinstance(Cards[enemy], Card):
+            if Cards[enemy].Guardian and not isinstance(Cards[enemyPos], Card) and enemy != enemyPos:
+                updateCards(enemyPos, Current_CardsNum[Current_CardsPos.index(enemy)], True)
+                deleteCard(enemy)
+    #Clinger
+    friendBool = int(pos > 4)*5
+    for friend in range(friendBool, friendBool + 5):
+        if friend == pos:
+            continue
+        if isinstance(Cards[friend], Card):
+            if Cards[friend].Clinger:
+                endPos = friend
+                boolDifDir = int(friend > pos) - int(friend < pos)
+                for clingPos in range(pos + boolDifDir, int(friend > pos)*4 + friendBool + boolDifDir, boolDifDir):
+                    if not isinstance(Cards[clingPos], Card):
+                        endPos = clingPos
+                        break
+                if friend != endPos:
+                    updateCards(endPos, Current_CardsNum[Current_CardsPos.index(friend)], True)
+                    deleteCard(friend)
 
 def attackPhase():
     global onPlayer2
     global turn
     for i in range(5):
-        if isinstance(Cards[i + int(onPlayer2)*5], Card):
+        if isinstance(Cards[i + int(onPlayer2)*5], Card) and not Cards[i + int(onPlayer2)*5].Sniper:
             Cards[i + int(onPlayer2)*5].Attack()
     for i in range(len(PlayersBattery)):
         if onPlayer2:
@@ -223,17 +324,21 @@ def attackPhase():
                 PlayersBattery[i] = 6
             else:
                 PlayersBattery[i] = turn//2 + 2
+    checkCircuits()
     sigilPhase()
+    placeStats()
     turn += 1
     onPlayer2 = not onPlayer2
 
 def KillCard(pos):
     CardSigils = Cards[pos].Sigils
+    sigil12 = False
     for sigil in CardSigils:
         if sigil == 1:
             #Annoying
             if isinstance(Cards[(pos + 5) % 10], Card):
-                Cards[(pos + 5) % 10].Power = Cards[(pos + 5) % 10].Power - 1
+                #Probably redundant
+                Cards[(pos + 5) % 10].Annoyed = False
         elif sigil == 6:
             #Green Mox
             PlayersGems[int(onPlayer2)][0] = False
@@ -254,21 +359,32 @@ def KillCard(pos):
             if isinstance(Cards[(pos + 5) % 10]):
                 deleteCard((pos + 5) % 10)
                 PlayersBones[not onPlayer2] += 1
+        elif sigil == 12:
+            sigil12 = True
+        elif sigil == 16:
+            displayMessage(f"Player {int(onPlayer2) + 1} was gifted a card")
         elif sigil == 24:
-            #I am no where close to being able to implement this
+            if inCircuit(pos):
+                displayMessage(f"Player {int(onPlayer2) + 1} was gifted a card")
             continue
         elif sigil == 10:
             #Bomb latch
-            #Skipping latches
-            continue
+            selectedCard[1] = 11
+            selectionPhase()
         elif sigil == 28:
             #Shield Latch
-            continue
+            selectedCard[1] = 28
+            selectionPhase()
         elif sigil == 30:
             #Brittle Latch
-            continue
+            selectedCard[1] = 4
+            selectionPhase()
+        elif sigil == 27:
+            displayMessage(f"Player {int(onPlayer2) + 1}, put the {Cards[pos].Name} into your hand.")
     PlayersBones[onPlayer2] += 1
     deleteCard(pos)
+    checkCircuits(sigil12)
+    placeStats()
     #Check for annoying. Check for Gem. Check for Detonator. Check for Gift When Powered. Check for latch. Add bone.
 
 def deleteCard(pos):
@@ -278,6 +394,7 @@ def deleteCard(pos):
     Current_CardsPos.remove(pos)
 
 def sigilPhase():
+    global sniping
     i = -1
     while i < 4:
         i += 1
@@ -301,11 +418,7 @@ def sigilPhase():
                     elif (offset - boolDifRight < 10) and not isinstance(Cards[offset - boolDifRight], Card):
                         Cards[offset].Move(-boolDifRight)
                         if i + 1 < 5 and (boolDifRight < 0):
-                            i += 1
-                elif sigil == 1:
-                    #Annoying
-                    if isinstance(Cards[i + int(not onPlayer2)*5], Card):
-                        Cards[i + int(not onPlayer2)*5].Power = Cards[i + int(not onPlayer2)*5].Power + 1                    
+                            i += 1                  
                 elif sigil == 4:
                     #Brittle
                     KillCard(offset)
@@ -318,39 +431,21 @@ def sigilPhase():
                 elif sigil == 8:
                     #Blue Mox
                     PlayersGems[int(onPlayer2)][2] = True
-                elif sigil == 9:
-                    #Guardian
-                    #Skipping. Jumps to empty to block card placed.
-                    continue
-                elif sigil == 10:
-                    #Bomb Latch
-                    #Idk about enough
-                    continue
                 elif sigil == 12:
                     #Attack Conduit
-                    #Circuit Question
-                    continue
-                elif sigil == 13:
-                    #Vessel Printer
-                    #Skipping
-                    continue
-                elif sigil == 14:
-                    #Bifurcated Strike
-                    #Check during attack
-                    continue
+                    if isCircuit(offset):
+                        for potentialCircuit in range(Circuits[1][int(onPlayer2)*2] + 1, Circuits[1][int(onPlayer2)*2 + 1]):
+                            if isinstance(Cards[potentialCircuit], Card):
+                                Cards[potentialCircuit].AttackUp = True
                 elif sigil == 15:
                     #Battery Bearer
                     if PlayersBattery[int(onPlayer2)] <= 5:
                         PlayersBattery[int(onPlayer2)] += 1
-                elif sigil == 16:
-                    #Gift Bearer
-                    #Need draw system
-                    continue
                 elif sigil == 17:
                     #Gem Detonator
                     PotentialGems = scanForGems()
                     for gemPos in PotentialGems:
-                        KillCard(gemPos)
+                        Cards[gemPos].AddSigil(11)
                 elif sigil == 18:
                     #Gem Guardian
                     PotentialGems = scanForGems()
@@ -358,62 +453,48 @@ def sigilPhase():
                         Cards[gemPos].AddSigil(29)
                 elif sigil == 19:
                     #Gem Spawn Conduit
-                    #Circuit Question
-                    continue
-                elif sigil == 20:
-                    #Sentry
-                    #Movement system?
-                    continue
+                    if inCircuit(offset):
+                        for gemSpot in range(Circuits[1][int(onPlayer2)*2] + 1, Circuits[1][int(onPlayer2)*2 + 1]):
+                            if not isinstance(Cards[gemSpot], Card):
+                                updateCards(gemSpot, 12, True)
                 elif sigil == 22:
                     #Sniper
-                    #Skipping. Into damage()
-                    continue
+                    selectedCard[1] = offset
+                    sniping = True
+                    selectionPhase()
                 elif sigil == 23:
                     #Transformer
                     Transform(offset)
-                    continue
-                elif sigil == 24:
-                    #Gift When Powered
-                    #Circuit Question.
-                    continue
-                elif sigil == 25:
-                    #Clinger
-                    #Skipping
-                    continue
-                elif sigil == 26:
-                    #Null Conduit
-                    # I don't need section
-                    continue ###
-                elif sigil == 27:
-                    #Unkillable
-                    #Need hand
-                    continue
-                elif sigil == 28:
-                    #Shield Latch
-                    #Kill section
-                    continue
-                elif sigil == 30:
-                    #Brittle Latch
-                    #Kill section
-                    continue
-                elif sigil == 31:
-                    #Trifurcated When Powered
-                    #Circuit Question
-                    continue
-                elif sigil == 33:
-                    #Buff When Powered
-                    #Circuit Question
-                    continue
-                elif sigil == 34:
-                    #Trifurcated Strike
-                    #Attack Phase
-                    continue
-                
+
+def selectionPhase(contin = False):
+    #Man idk, events or something.
+    global updating
+    global selecting
+    global selectedCard
+    global sniping
+    if contin:
+        if not sniping:
+            if -1 not in selectedCard and isinstance(Cards[selectedCard[0]], Card):
+                Cards[selectedCard[0]].AddSigil(selectedCard[1])
+        else:
+            if (selectedCard[0] > 4) != onPlayer2:
+                print("You need to select one of your opponent's cards, Player " + str(int(onPlayer2) + 1) + ".")
+                selectedCard[0] = -1
+                return
+            Cards[selectedCard[1]].Attack(selectedCard[0])
+            sniping = False
+        selectedCard = [-1, -1]
+        selecting = False
+    else:
+        selecting = True
+        if not sniping:
+            displayMessage(f"Player {int(onPlayer2) + 1}, choose a card to place your sigil.")
+
 def scanForGems():
     GemCardPos = []
     if PlayersGems[int(onPlayer2)][0] or PlayersGems[int(onPlayer2)][1] or PlayersGems[int(onPlayer2)][2]:
         for j in range(10):
-            if isinstance[Cards[j], Card]:
+            if isinstance(Cards[j], Card):
                 PotentialGems = Cards[j].Sigils
                 for sig in PotentialGems:
                     if sig == 6 or sig == 7 or sig == 8:
@@ -441,19 +522,124 @@ def displayMessage(message):
     global messageString
     messageString = str(message)
 
+def selectionBox(pos):
+    global width, height, Buffer_Width, Buffer_Height, Card_Width, Card_Height, screen
+    pygame.draw.rect(screen, (0, 255, 0), pygame.Rect((width/2 - 2*Buffer_Width - Card_Width/2 - Card_Width/10) + (pos%5)*Buffer_Width, Buffer_Height - Card_Height/14 + int(pos > 4)*(height - Card_Height - 2*Buffer_Height), 10 + Card_Width*6/5, Card_Height*8/7), 10)
+
+def clearStatsImagePos():
+    for j in range(4):
+        cardStatsImagePos[int(j > 1)][j % 2].clear()
+
+def placeStats():
+    clearStatsImagePos()
+    h = -1
+    while h < len(Cards) - 1:
+        h += 1
+        if isinstance(Cards[h], Card):
+            if isinstance(Cards[(h + 5) % 10], Card):
+                if 1 in Cards[h].Sigils:
+                    if not Cards[(h + 5) % 10].Annoyed:
+                        Cards[(h + 5) % 10].Annoyed = True
+                        h = -1
+                        clearStatsImagePos()
+                        continue
+                elif Cards[(h + 5) % 10].Annoyed:
+                    Cards[(h + 5) % 10].Annoyed = False
+                    h = -1
+                    clearStatsImagePos()
+                    continue
+            #Should probably make the surface of the stats the card.
+            newcardStat = font2.render(str(Cards[h].getDamage()), True, (13, 230, 254))
+            newcardStatLabel = newcardStat.get_rect()
+            widthPos = (width/2 - 2*Buffer_Width - Card_Width/2) + (h%5)*Buffer_Width
+            heightPos = Buffer_Height + int(h > 4)*(height - Card_Height - 2*Buffer_Height)
+            wBuffers = [23, 113]
+            hBuffer = 207
+            xBuffers = ([0, 3, 25], [22, 19, 7])
+            if(h <= 4):
+                hBuffer = Card_Height - hBuffer
+                wBuffers[0] = Card_Width - wBuffers[0]
+                wBuffers[1] = Card_Width - wBuffers[1]
+            newcardStatLabel.topright = (widthPos + wBuffers[0] + xBuffers[int(h > 4)][0], heightPos + hBuffer - xBuffers[int(h > 4)][2])
+            newcardStat2 = font2.render(str(Cards[h].Health), True, (13, 230, 254))
+            newcardStat2Label = newcardStat2.get_rect()
+            newcardStat2Label.topright = (widthPos + wBuffers[1] + xBuffers[int(h > 4)][1], heightPos + hBuffer - xBuffers[int(h > 4)][2])
+            if(h <= 4):
+                newcardStat = pygame.transform.rotate(newcardStat, 180)
+                newcardStat2 = pygame.transform.rotate(newcardStat2, 180)
+            cardStatsImagePos[int(h > 4)][0].append((newcardStat, newcardStatLabel))
+            cardStatsImagePos[int(h > 4)][1].append((newcardStat2, newcardStat2Label))
+
+def checkCircuits(sigil12 = False):
+    for i in range(len(Cards)):
+        if isinstance(Cards[i], Card):
+            if Cards[i].Conduit and i not in Circuits[0]:
+                Circuits[0].append(i)
+    Circuits[0].sort()
+    if len(Circuits[0]) < 2:
+        return
+    bounds = [-1, -1, -1, -1]
+    bounds[0] = min((i for i in Circuits[0] if i < 5), default= -1)
+    bounds[1] = max((i for i in Circuits[0] if i < 5), default= -1)
+    bounds[2] = min((i for i in Circuits[0] if i >= 5), default= -1)
+    bounds[3] = max((i for i in Circuits[0] if i >= 5), default= -1)
+    for j in range(2):
+        if bounds[2*j] == bounds[2*j + 1]:
+            bounds[2*j] = bounds[2*j + 1] = -1
+    c = -1
+    while c < len(Circuits[0]) - 1:
+        c += 1
+        if Circuits[0][c] >= bounds[0] and Circuits[0][c] <= bounds[1]:
+            del Circuits[0][c]
+            c = -1
+        elif Circuits[0][c] >= bounds[2] and Circuits[0][c] <= bounds[3]:
+            del Circuits[0][c]
+            c = -1
+    for b in range(len(bounds)):
+        if bool(b % 2):
+            if bounds[b] > Circuits[1][b]:
+                Circuits[1][b] = bounds[b]
+        else:
+            if bounds[b] < Circuits[1][b]:
+                Circuits[1][b] = bounds[b]
+    checkPowered(sigil12)
+
+def checkPowered(sigil12 = False):
+    for pos in range(10):
+        if isinstance(Cards[pos], Card):
+            if inCircuit(pos):
+                Cards[pos].Powered = True
+            else:
+                Cards[pos].Powered = False
+                if sigil12:
+                    Cards[pos].AttackUp = False
+
+def inCircuit(pos):
+    if pos > Circuits[1][int(pos > 4)*2] and pos < Circuits[1][int(pos > 4)*2 + 1]:
+        return True
+    return False
+
+def isCircuit(pos):
+    if Circuits[1][int(pos > 4)*2] == pos or Circuits[1][int(pos > 4)*2 + 1] == pos:
+        return True
+    return False
+
 #Setting up game
 pygame.init()
 pygame.mixer.init()
 arduino = connect()
-width, height = pyautogui.size()
+width, height = size()
 Card_Height = 233
 Card_Width = 155
 screen = pygame.display.set_mode((width, height))
+messageString = ""
 font = pygame.font.Font(pygame.font.get_default_font(), 32)
+font2 = pygame.font.SysFont('bankgothic', 30)
 text = font.render("0  0 0", True, (255, 255, 255), (0, 0, 0))
 text2 = font.render("0 0", True, (255, 255, 255), (0, 0, 0))
-messageString = ""
 textMessage = font.render(messageString, True, (255, 255, 255), (0, 0, 0))
+#Player 1 or 2. Power or Health. Insert Box then Label as tuple. 
+cardStatsImagePos = (([], []), ([], []))
 textLabel = text.get_rect()
 textLabel2 = text2.get_rect()
 textMessageLabel = textMessage.get_rect()
@@ -471,10 +657,12 @@ t.start()
 #Loading Images
 CardImages = []
 base = "Code\\Python\\Resources\\Images\\"
-for filename in os.listdir(base + "Cards"):
+filenames = listdir(base + "Cards")
+filenames.sort()
+for filename in filenames:
     CardImage = pygame.image.load(base + "Cards\\" + filename)
     CardImage = pygame.transform.scale(CardImage, (Card_Width, Card_Height))
-    CardImages.insert(len(CardImages), CardImage)
+    CardImages.append(CardImage)
 Background = pygame.image.load(base + "Background3.jpg")
 Background = pygame.transform.scale(Background, (width, height))
 CardSlot = pygame.image.load(base + "CardSlot.png")
@@ -522,6 +710,8 @@ CardStats = Stats.readlines()[1:]
 #Main Loop
 onNum = False
 updating = False
+selecting = False
+sniping = False
 inputKeys = []
 while 1:
     #Clear screen
@@ -541,8 +731,15 @@ while 1:
                 CardSlotMod = pygame.transform.rotate(CardSlot, 180)
             screen.blit(CardSlotMod, ((width/2 - 2*Buffer_Width - Card_Width/2) + (h%5)*Buffer_Width, Buffer_Height + int(h > 4)*(height - Card_Height - 2*Buffer_Height)))
             pygame.draw.rect(screen, (5,152,206), pygame.Rect((width/2 - 2*Buffer_Width - Card_Width/2) + (h%5)*Buffer_Width, Buffer_Height + int(h > 4)*(height - Card_Height - 2*Buffer_Height), Card_Width+10, Card_Height), 10) 
-    if len(Current_CardsNum) != len(Current_CardsPos):    
-        pygame.draw.rect(screen, (0, 255, 0), pygame.Rect((width/2 - 2*Buffer_Width - Card_Width/2 - Card_Width/10) + (Current_CardsPos[-1]%5)*Buffer_Width, Buffer_Height - Card_Height/14 + int(Current_CardsPos[-1] > 4)*(height - Card_Height - 2*Buffer_Height), 10 + Card_Width*6/5, Card_Height*8/7), 10)
+        if selecting:
+            if pygame.Rect((width/2 - 2*Buffer_Width - Card_Width/2) + (h%5)*Buffer_Width, Buffer_Height + int(h > 4)*(height - Card_Height - 2*Buffer_Height), Card_Width+10, Card_Height).collidepoint(pygame.mouse.get_pos()):
+                selectionBox(h)
+    if len(Current_CardsNum) != len(Current_CardsPos):
+        selectionBox(Current_CardsPos[-1])    
+    for j in range(4):
+        for statPic in cardStatsImagePos[int(j > 1)][j % 2]:
+            if isinstance(statPic, tuple):
+                screen.blit(statPic[0], statPic[1])
     listString = listsToString()
     pygame.display.set_caption(listString)
     text2String = str(PlayersHealth[1]) + " " + str(PlayersBattery[1])
@@ -589,3 +786,10 @@ while 1:
                 select_Card.play()
         if event.type == pygame.MOUSEBUTTONDOWN:
             messageString = ""
+            if selecting:
+                mousePos = pygame.mouse.get_pos()
+                for h in range(10):
+                    if pygame.Rect((width/2 - 2*Buffer_Width - Card_Width/2) + (h%5)*Buffer_Width, Buffer_Height + int(h > 4)*(height - Card_Height - 2*Buffer_Height), Card_Width+10, Card_Height).collidepoint(mousePos):
+                        selectedCard[0] = h
+                        selectionPhase(True)
+                        break

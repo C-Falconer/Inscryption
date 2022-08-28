@@ -47,3 +47,4 @@ ID,Name,Attack,Health,Cost,AbilityID
 45,Splinter_Cell,1,2,4,31
 46,Swapbot,1,5,6,32
 47,Tough_Cell,1,2,3,33
+48,ZZZ,0,100,0,1
