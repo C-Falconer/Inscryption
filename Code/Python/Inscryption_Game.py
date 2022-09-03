@@ -16,6 +16,7 @@ onPlayer2 = False
 PlayersHealth = [0, 0]
 PlayersBattery = [1, 1]
 PlayersBones = [0, 0]
+#Conduits, Circuit Boundaries (Player 1 low, Player 1 high, Player 2 low, Player 2 high)
 Circuits = ([], [-1, -1, -1, -1])
 turn = 0
 selectedCard = [-1, -1]
@@ -43,7 +44,7 @@ class Card:
         self.VesselPrinter = False
         self.Annoyed = False
         self.Conduit = False
-        self.Guardian = False #
+        self.Guardian = False
         self.AttackUp = False
         self.Buffed = False
         self.Powered = False
@@ -101,12 +102,14 @@ class Card:
         if snipe != -1:
             self.Strike(snipe)
             return
+        #Which positions in front of the card are hit. -1 is to the left. 0 directly in front. 1 to the right.
         damagePositions = [0]
         if self.Tri or self.Bi:
             if self.Tri:
                 damagePositions = [-1, 0, 1]
             elif self.Bi:
                 damagePositions = [-1, 1]
+            #Makes sure you're not hitting over the edge
             if -1 in damagePositions and (self.Pos - 1) % 5 == 4:
                 damagePositions.remove(-1)
             elif 1 in damagePositions and (self.Pos + 1) % 5 == 0:
@@ -139,6 +142,7 @@ class Card:
         if self.Health <= 0:
             KillCard(self.Pos)  
     def Move(self, direction):
+        #Makes sure that there is not a card at the future position. Makes sure wouldn't move off sides.
         if (not isinstance(Cards[(self.Pos + direction) % 10], Card)) and (self.Pos % 5 + direction >= 0) and (self.Pos % 5 + direction <= 4):
             Current_CardsPos[Current_CardsPos.index(self.Pos)] = self.Pos + direction
             Cards[self.Pos + direction] = self
@@ -200,6 +204,7 @@ def listsToString():
             Numi += 1
     return ', '.join(map(str, newList))
 
+#Connects to Arduino through Serial Port
 def connect():
     arduino = Serial()
     arduino.port = 'COM15'
@@ -207,6 +212,7 @@ def connect():
     arduino.open()
     return arduino
 
+#Threaded to constantly read from the arduino and attempts to display cards.
 def readArduino():
     while 1:
         data = arduino.readline()
@@ -224,46 +230,66 @@ def readArduino():
             print("Read failed.")
 
 def updateCards(pos, num, overrideBattery = False):
+    #Makes sure it is correct player's turn.
     if onPlayer2 != (pos > 4):
         print("It is Player {0}'s turn.".format(int(onPlayer2) + 1))
         return
+    #Gets stats.
     try:
         statsGot = CardStats[num].split(",", 5)
     except:
         print("Could not find card", num)
         return
+    #Removes extra whitespace off end.
     statsGot[-1] = statsGot[-1].strip()
+    #Removes empty stats.
     if statsGot.count('') > 0:
         for i in range(statsGot.count('')):
             statsGot.remove('')
     print(statsGot, filenames[num])
+    #Checks and updates battery.
     if PlayersBattery[int(pos > 4)] - int(statsGot[4]) < 0 and not overrideBattery:
         print("Not enought battery to play this card.")
         return
     elif not overrideBattery:
         PlayersBattery[int(pos > 4)] -= int(statsGot[4])
-    updating = True
+    #Starts placing card.
+    updating = True #Game works, but might invest in this being global.
     if len(statsGot) < 6:
+        #No sigils
+        #Gets name stat
         name = statsGot[1]
+        #Converts Power, Health, and Cost to int
         statsGot = list(map(int, statsGot[2:5]))
+        #Reads name, along with adding position.
         statsGot.insert(0, name)
         statsGot.insert(0, pos)
+        #Creates Card
         NewCard = Card(pos, statsGot[1], statsGot[2], statsGot[3], statsGot[4])
         Cards[pos] = NewCard
     else:
+        #Card with sigils
+        #Grabs sigils
         sigilsGot = statsGot[5]
+        #Grabs name
         name = statsGot[1]
+        #Converts integer stats into int
         statsGot = list(map(int, statsGot[2:5]))
+        #Readds name and adds position
         statsGot.insert(0, name)
         statsGot.insert(0, pos)
+        #Checks for multiple sigils
         if sigilsGot.find(",") != -1:
             sigilsGot = sigilsGot[1:len(sigilsGot) - 1].split(",")
+        #Converts into sigils int
         if isinstance(sigilsGot, list):
             sigilsGot = list(map(int, sigilsGot))
         else:
             sigilsGot = [int(sigilsGot)]
+        #Creates card
         NewCard = Card(pos, name, statsGot[2], statsGot[3], statsGot[4], sigilsGot)
         Cards[pos] = NewCard
+        #Checks for Amorphous
         for sigil in sigilsGot:
             if sigil == 2:
                 #Amorphous
@@ -272,18 +298,23 @@ def updateCards(pos, num, overrideBattery = False):
                     rand = floor(uniform(0, 33))
                 Cards[pos].Sigils = [rand]
                 print("Got Sigil", rand)
+    #Overwrites old cards
     if pos in Current_CardsPos:
         del Current_CardsNum[Current_CardsPos.index(pos)]
         Current_CardsPos.remove(pos)
+    #Adds new card to Pos/Num list
     Current_CardsPos.append(pos)
     Current_CardsNum.append(num)
+    #Runs checks
     cardPlaced(pos)
     checkCircuits()
     placeStats()
+    #Plays sound and ends card placement
     place_Card.play()
     updating = False
 
 def cardPlaced(pos):
+    #Checks for card placing sigil events
     enemyPos = (pos + 5) % 10
     #Sentry
     if isinstance(Cards[enemyPos], Card):
@@ -296,23 +327,32 @@ def cardPlaced(pos):
                 updateCards(enemyPos, Current_CardsNum[Current_CardsPos.index(enemy)], True)
                 deleteCard(enemy)
     #Clinger
+    #Your side of the board
     friendBool = int(pos > 4)*5
+    #Checks your side for another card that has the clinger class
     for friend in range(friendBool, friendBool + 5):
+        #Ignore the card you're on
         if friend == pos:
             continue
         if isinstance(Cards[friend], Card):
             if Cards[friend].Clinger:
+                #If a clinger is found, save their position under "endPos"
                 endPos = friend
+                #If the clinger is to the right of the current card, set the direction to 1. Otherwise to -1.
                 boolDifDir = int(friend > pos) - int(friend < pos)
+                #Starts at the position next to the current card in the direction of the clinger. Continues going towards clinger dir.
+                #Potential glitch that the clinger moves the wrong way if every position is filled between.
                 for clingPos in range(pos + boolDifDir, int(friend > pos)*4 + friendBool + boolDifDir, boolDifDir):
                     if not isinstance(Cards[clingPos], Card):
                         endPos = clingPos
                         break
+                #If you find an empty card pos, move the clinger there.
                 if friend != endPos:
                     updateCards(endPos, Current_CardsNum[Current_CardsPos.index(friend)], True)
                     deleteCard(friend)
 
 def attackPhase():
+    #Runs the attacks of cards.
     global onPlayer2
     global turn
     for i in range(5):
@@ -331,6 +371,7 @@ def attackPhase():
     onPlayer2 = not onPlayer2
 
 def KillCard(pos):
+    #Kills the card at "pos". Checks Sigils for death related sigils.
     CardSigils = Cards[pos].Sigils
     sigil12 = False
     for sigil in CardSigils:
@@ -385,15 +426,16 @@ def KillCard(pos):
     deleteCard(pos)
     checkCircuits(sigil12)
     placeStats()
-    #Check for annoying. Check for Gem. Check for Detonator. Check for Gift When Powered. Check for latch. Add bone.
 
 def deleteCard(pos):
+    #Actually removes card. Used mostly in the case of KillCard. However, is used by sigils like "transformer" to remove a card without running a full phase.
     del Cards[pos]     
     Cards.insert(pos, "") 
     del Current_CardsNum[Current_CardsPos.index(pos)]
     Current_CardsPos.remove(pos)
 
 def sigilPhase():
+    #Checks sigils
     global sniping
     i = -1
     while i < 4:
@@ -467,7 +509,7 @@ def sigilPhase():
                     Transform(offset)
 
 def selectionPhase(contin = False):
-    #Man idk, events or something.
+    #A phase for any card that needs the player to select a card on the board. For example, sniper or latches. 
     global updating
     global selecting
     global selectedCard
@@ -491,6 +533,7 @@ def selectionPhase(contin = False):
             displayMessage(f"Player {int(onPlayer2) + 1}, choose a card to place your sigil.")
 
 def scanForGems():
+    #Checks how many gems are on the board.
     GemCardPos = []
     if PlayersGems[int(onPlayer2)][0] or PlayersGems[int(onPlayer2)][1] or PlayersGems[int(onPlayer2)][2]:
         for j in range(10):
@@ -502,6 +545,7 @@ def scanForGems():
     return GemCardPos
 
 def Transform(currentCard):
+    #For the sigil "Transform"
     name = Cards[currentCard].Name
     deleteCard(currentCard)
     if name == "GR1ZZ_T":
@@ -519,10 +563,12 @@ def Transform(currentCard):
     transform.play()
 
 def displayMessage(message):
+    #Used for messages to the players.
     global messageString
     messageString = str(message)
 
 def selectionBox(pos):
+    #Draws a box at the given position
     global width, height, Buffer_Width, Buffer_Height, Card_Width, Card_Height, screen
     pygame.draw.rect(screen, (0, 255, 0), pygame.Rect((width/2 - 2*Buffer_Width - Card_Width/2 - Card_Width/10) + (pos%5)*Buffer_Width, Buffer_Height - Card_Height/14 + int(pos > 4)*(height - Card_Height - 2*Buffer_Height), 10 + Card_Width*6/5, Card_Height*8/7), 10)
 
@@ -531,12 +577,15 @@ def clearStatsImagePos():
         cardStatsImagePos[int(j > 1)][j % 2].clear()
 
 def placeStats():
+    #Resets stats positions
     clearStatsImagePos()
+    #Checks all cards and places a stat text box on each.
     h = -1
     while h < len(Cards) - 1:
         h += 1
         if isinstance(Cards[h], Card):
             if isinstance(Cards[(h + 5) % 10], Card):
+                #Deals with the annoying sigil.
                 if 1 in Cards[h].Sigils:
                     if not Cards[(h + 5) % 10].Annoyed:
                         Cards[(h + 5) % 10].Annoyed = True
@@ -548,6 +597,7 @@ def placeStats():
                     h = -1
                     clearStatsImagePos()
                     continue
+            #Places stats on cards
             #Should probably make the surface of the stats the card.
             newcardStat = font2.render(str(Cards[h].getDamage()), True, (13, 230, 254))
             newcardStatLabel = newcardStat.get_rect()
@@ -571,21 +621,28 @@ def placeStats():
             cardStatsImagePos[int(h > 4)][1].append((newcardStat2, newcardStat2Label))
 
 def checkCircuits(sigil12 = False):
+    #Checks if there is a circuit.
+    #Checks for conduits.
     for i in range(len(Cards)):
         if isinstance(Cards[i], Card):
             if Cards[i].Conduit and i not in Circuits[0]:
                 Circuits[0].append(i)
+    #Puts the conduits in order.
     Circuits[0].sort()
+    #Skips if there are 0 or 1 conduits.
     if len(Circuits[0]) < 2:
         return
+    #Defines the boundaries of the circuit.
     bounds = [-1, -1, -1, -1]
     bounds[0] = min((i for i in Circuits[0] if i < 5), default= -1)
     bounds[1] = max((i for i in Circuits[0] if i < 5), default= -1)
     bounds[2] = min((i for i in Circuits[0] if i >= 5), default= -1)
     bounds[3] = max((i for i in Circuits[0] if i >= 5), default= -1)
+    #Removes duplicate boundaries.
     for j in range(2):
         if bounds[2*j] == bounds[2*j + 1]:
             bounds[2*j] = bounds[2*j + 1] = -1
+    #Removes redundant conduits.
     c = -1
     while c < len(Circuits[0]) - 1:
         c += 1
@@ -605,6 +662,7 @@ def checkCircuits(sigil12 = False):
     checkPowered(sigil12)
 
 def checkPowered(sigil12 = False):
+    #Rechecks if cards affected by circuits are still in a circuit. Specially checks for "Buff when Powered", aka sigil 12.
     for pos in range(10):
         if isinstance(Cards[pos], Card):
             if inCircuit(pos):
@@ -615,11 +673,13 @@ def checkPowered(sigil12 = False):
                     Cards[pos].AttackUp = False
 
 def inCircuit(pos):
+    #Returns if a card is in a Circuit.
     if pos > Circuits[1][int(pos > 4)*2] and pos < Circuits[1][int(pos > 4)*2 + 1]:
         return True
     return False
 
 def isCircuit(pos):
+    #Checks if there is a circuit.
     if Circuits[1][int(pos > 4)*2] == pos or Circuits[1][int(pos > 4)*2 + 1] == pos:
         return True
     return False
@@ -627,11 +687,15 @@ def isCircuit(pos):
 #Setting up game
 pygame.init()
 pygame.mixer.init()
+#Arduino set up
 arduino = connect()
+#Grabs screen size
 width, height = size()
 Card_Height = 233
 Card_Width = 155
+#Sets screen size
 screen = pygame.display.set_mode((width, height))
+#Sets variables and text boxes
 messageString = ""
 font = pygame.font.Font(pygame.font.get_default_font(), 32)
 font2 = pygame.font.SysFont('bankgothic', 30)
@@ -716,8 +780,11 @@ inputKeys = []
 while 1:
     #Clear screen
     screen.fill(0)
+    #Places background
     screen.blit(Background, (0, 0))
+    #Goes through cards
     for h in range(10): 
+        #Places images, else places an empty card slot. Cards are rotated.
         if h in Current_CardsPos and not updating:
             if h > 4:
                 CurrentCard = CardImages[Current_CardsNum[Current_CardsPos.index(h)]]
@@ -731,17 +798,22 @@ while 1:
                 CardSlotMod = pygame.transform.rotate(CardSlot, 180)
             screen.blit(CardSlotMod, ((width/2 - 2*Buffer_Width - Card_Width/2) + (h%5)*Buffer_Width, Buffer_Height + int(h > 4)*(height - Card_Height - 2*Buffer_Height)))
             pygame.draw.rect(screen, (5,152,206), pygame.Rect((width/2 - 2*Buffer_Width - Card_Width/2) + (h%5)*Buffer_Width, Buffer_Height + int(h > 4)*(height - Card_Height - 2*Buffer_Height), Card_Width+10, Card_Height), 10) 
+        #Draw a bot if in the selecting stage.
         if selecting:
             if pygame.Rect((width/2 - 2*Buffer_Width - Card_Width/2) + (h%5)*Buffer_Width, Buffer_Height + int(h > 4)*(height - Card_Height - 2*Buffer_Height), Card_Width+10, Card_Height).collidepoint(pygame.mouse.get_pos()):
                 selectionBox(h)
+    #If placing with keypad. 
     if len(Current_CardsNum) != len(Current_CardsPos):
         selectionBox(Current_CardsPos[-1])    
+    #Adds stats
     for j in range(4):
         for statPic in cardStatsImagePos[int(j > 1)][j % 2]:
             if isinstance(statPic, tuple):
                 screen.blit(statPic[0], statPic[1])
+    #Sets the caption as a list of positions and ids.
     listString = listsToString()
     pygame.display.set_caption(listString)
+    #Sets up health and battery text boxes.
     text2String = str(PlayersHealth[1]) + " " + str(PlayersBattery[1])
     textLabel2.topright = (width - 1 - 15*(len(text2String)-3), 0)
     textMessageLabel.topleft = (width/2 - 1 - 15*len(messageString)/2, 0)
@@ -751,43 +823,62 @@ while 1:
     screen.blit(text, textLabel)
     screen.blit(text2, textLabel2)
     screen.blit(textMessage, textMessageLabel)
+    #Updates screen.
     pygame.display.flip()
+    #Runs through events.
     for event in pygame.event.get():
         if event.type==pygame.QUIT:
+            #If quit, then quit.
             pygame.quit() 
             exit(0) 
         if event.type == pygame.KEYDOWN:
+            #Gets number for which number pad key was pressed. -1 for enter, runs attack phase for 'a'.
             keyNum = returnKeyNum(event.key)
+            #Checks for empty return.
             if keyNum == None:
                 continue
+            #Flips back and forth from wanting the card position, and wanting the card ID.
             if onNum:
+                #Keeps grabbing input until the player presses enter.
                 if keyNum != -1:
                     inputKeys.append(keyNum)
                     continue
+                #Sets "keyNum" as the full input.
                 keyNum = 0
                 for k in range(len(inputKeys)):
                     keyNum += inputKeys[k]*10**(len(inputKeys) - k - 1)
                 inputKeys.clear()
+                #Toggles pos/ID. 
                 onNum = False
+                #Runs update phase based on most recent card pos and current id given by "keyNum"
                 position = Current_CardsPos[-1]
                 del Current_CardsPos[-1]
                 updateCards(position, keyNum)
                 updating = False
             else:
+                #Checks if on the right player.
                 if onPlayer2 != (keyNum > 4):
                     print("It is Player {0}'s turn.".format(int(onPlayer2) + 1))
                     continue
+                #Toggles pos/ID.
                 onNum = True
+                #Starts card placing.
                 updating = True
+                #Updates lists for position and ID if needed to overwrite.
                 if keyNum in Current_CardsPos:
                     del Current_CardsNum[Current_CardsPos.index(keyNum)]
                     Current_CardsPos.remove(keyNum)
+                #Adds to position list.
                 Current_CardsPos.append(keyNum)
+                #Plays sound effect.
                 select_Card.play()
         if event.type == pygame.MOUSEBUTTONDOWN:
+            #Clears the message when mouse is clicked.
             messageString = ""
             if selecting:
+                #Continues selection phase by setting which card was picked.
                 mousePos = pygame.mouse.get_pos()
+                #Checks which card matches the mouse position.
                 for h in range(10):
                     if pygame.Rect((width/2 - 2*Buffer_Width - Card_Width/2) + (h%5)*Buffer_Width, Buffer_Height + int(h > 4)*(height - Card_Height - 2*Buffer_Height), Card_Width+10, Card_Height).collidepoint(mousePos):
                         selectedCard[0] = h
