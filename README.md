@@ -3,7 +3,7 @@
 ---
 #### So, here's the project...
 
-<img src="https://github.com/C-Falconer/Inscryption/blob/main/Project_Journey_Files/20220924_013645.jpg" alt = "Wire Monster Final Phase" title = "Wire Monster Final Phase" width = "26%"> <a href="http://www.youtube.com/watch?feature=player_embedded&v=RWWOy5Cf8dE
+<img src="https://github.com/C-Falconer/Inscryption/blob/main/Project_Journey_Files/20220924_013645.jpg" alt = "Wire Monster Final Phase" title = "Wire Monster Final Phase" width = "25%"> <a href="http://www.youtube.com/watch?feature=player_embedded&v=RWWOy5Cf8dE
 " target="_blank"><img src="http://img.youtube.com/vi/RWWOy5Cf8dE/0.jpg" 
 alt="Python Game" width="480" height="337" border="10" /></a>
 
